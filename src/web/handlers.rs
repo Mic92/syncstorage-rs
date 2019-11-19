@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use actix_web::{http::StatusCode, Error, HttpResponse};
 use futures::future::{self, Either, Future};
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::db::{params, results::Paginated, DbError, DbErrorKind};
 use crate::error::ApiError;
 use crate::web::extractors::{
     BsoPutRequest, BsoRequest, CollectionPostRequest, CollectionRequest, ConfigRequest,
-    MetaRequest, ReplyFormat,
+    HeartbeatRequest, MetaRequest, ReplyFormat,
 };
 use crate::web::{X_LAST_MODIFIED, X_WEAVE_NEXT_OFFSET, X_WEAVE_RECORDS};
 
@@ -375,4 +375,42 @@ pub fn put_bso(bso_req: BsoPutRequest) -> impl Future<Item = HttpResponse, Error
 
 pub fn get_configuration(creq: ConfigRequest) -> impl Future<Item = HttpResponse, Error = Error> {
     future::result(Ok(HttpResponse::Ok().json(creq.limits)))
+}
+
+pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error = Error> {
+    use crate::server::ServerState;
+
+    let mut checklist = HashMap::new();
+    checklist.insert(
+        "version",
+        Value::String(env!("CARGO_PKG_VERSION").to_owned()),
+    );
+    let state = match hb.req.app_data::<ServerState>() {
+        Some(v) => v,
+        None => {
+            checklist.insert("state", Value::String("error".to_owned()));
+            return Either::A(future::result(Ok(HttpResponse::Ok().json(checklist))));
+        }
+    };
+    let fut = state.db_pool.get().map_err(Into::into).and_then(|db| {
+        checklist.insert("state", Value::String("ok".to_owned()));
+        match db.check() {
+            Ok(true) => {
+                checklist.insert("database", Value::String("good".to_owned()));
+            }
+            Ok(false) => {
+                checklist.insert("database", Value::String("warn".to_owned()));
+                checklist.insert(
+                    "database_warn",
+                    Value::String("check failed without error".to_owned()),
+                );
+            }
+            Err(e) => {
+                checklist.insert("database", Value::String("fail".to_owned()));
+                checklist.insert("database_error", Value::String(format!("{:?}", e)));
+            }
+        };
+        future::ok(HttpResponse::Ok().json(checklist))
+    });
+    Either::B(fut)
 }

@@ -1552,4 +1552,11 @@ impl Db for SpannerDb {
     fn clear_coll_cache(&self) {
         self.coll_cache.clear();
     }
+
+    fn check(&self) -> Result<bool> {
+        // TODO: is there a better check than just fetching UTC?
+        self.sql("SELECT UNIX_SECONDS(CURRENT_TIMESTAMP())")?
+            .execute(&self.conn)?;
+        Ok(true)
+    }
 }

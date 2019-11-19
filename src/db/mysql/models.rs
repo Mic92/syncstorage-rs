@@ -1006,6 +1006,12 @@ impl Db for MysqlDb {
     fn clear_coll_cache(&self) {
         self.coll_cache.clear();
     }
+
+    fn check(&self) -> Result<bool> {
+        // has the database been up for more than 0 seconds?
+        let result = sql_query("SHOW STATUS LIKE \"Uptime\"").execute(&self.conn)?;
+        Ok(result as u64 > 0)
+    }
 }
 
 #[derive(Debug, QueryableByName)]

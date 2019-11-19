@@ -860,6 +860,20 @@ impl FromRequest for ConfigRequest {
     }
 }
 
+pub struct HeartbeatRequest {
+    pub(crate) req: HttpRequest,
+}
+
+impl FromRequest for HeartbeatRequest {
+    type Config = ();
+    type Error = Error;
+    type Future = Result<Self, Self::Error>;
+
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
+        Ok(Self { req: req.clone() })
+    }
+}
+
 /// Extract a user-identifier from the authentication token and validate against the URL
 ///
 /// This token should be adapted as needed for the storage system to store data
