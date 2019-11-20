@@ -393,14 +393,8 @@ pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error
         "version",
         Value::String(env!("CARGO_PKG_VERSION").to_owned()),
     );
-    checklist.insert(
-        "status",
-        Value::String("good".to_owned())
-    );
-    checklist.insert(
-        "state_data",
-        Value::String("good".to_owned())
-    );
+    checklist.insert("status", Value::String("good".to_owned()));
+    checklist.insert("state_data", Value::String("good".to_owned()));
     let state = match hb.req.app_data::<ServerState>() {
         Some(v) => v,
         None => {
@@ -417,14 +411,14 @@ pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error
             Ok(false) => {
                 checklist.insert("database", Value::String("warn".to_owned()));
                 checklist.insert(
-                    "database_warn",
+                    "database_msg",
                     Value::String("check failed without error".to_owned()),
                 );
             }
             Err(e) => {
                 checklist.insert("status", Value::String("fail".to_owned()));
                 checklist.insert("database", Value::String("fail".to_owned()));
-                checklist.insert("database_error", Value::String(format!("{:?}", e)));
+                checklist.insert("database_msg", Value::String(format!("{:?}", e)));
             }
         };
         future::ok(HttpResponse::Ok().json(checklist))
