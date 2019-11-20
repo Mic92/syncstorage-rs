@@ -377,23 +377,39 @@ pub fn get_configuration(creq: ConfigRequest) -> impl Future<Item = HttpResponse
     future::result(Ok(HttpResponse::Ok().json(creq.limits)))
 }
 
+/** Returns a status message indicating the state of the current server
+ *
+ * * version - Version information
+ * * state_data - Is the app state data present ("good" | "fail")
+ * * database - Database connection and status ("good" | "warn" | "fail")
+ * * status - Overall system status ("good" | "fail")
+ */
 pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error = Error> {
     use crate::server::ServerState;
 
     let mut checklist = HashMap::new();
+
     checklist.insert(
         "version",
         Value::String(env!("CARGO_PKG_VERSION").to_owned()),
     );
+    checklist.insert(
+        "status",
+        Value::String("good".to_owned())
+    );
+    checklist.insert(
+        "state_data",
+        Value::String("good".to_owned())
+    );
     let state = match hb.req.app_data::<ServerState>() {
         Some(v) => v,
         None => {
-            checklist.insert("state", Value::String("error".to_owned()));
+            checklist.insert("status", Value::Bool(false));
+            checklist.insert("state_data", Value::String("fail".to_owned()));
             return Either::A(future::result(Ok(HttpResponse::Ok().json(checklist))));
         }
     };
     let fut = state.db_pool.get().map_err(Into::into).and_then(|db| {
-        checklist.insert("state", Value::String("ok".to_owned()));
         match db.check() {
             Ok(true) => {
                 checklist.insert("database", Value::String("good".to_owned()));
@@ -406,6 +422,7 @@ pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error
                 );
             }
             Err(e) => {
+                checklist.insert("status", Value::String("fail".to_owned()));
                 checklist.insert("database", Value::String("fail".to_owned()));
                 checklist.insert("database_error", Value::String(format!("{:?}", e)));
             }
