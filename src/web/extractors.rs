@@ -860,6 +860,7 @@ impl FromRequest for ConfigRequest {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct HeartbeatRequest {
     pub(crate) req: HttpRequest,
 }

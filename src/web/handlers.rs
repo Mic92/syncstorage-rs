@@ -3,16 +3,19 @@ use std::collections::HashMap;
 
 use actix_web::{http::StatusCode, Error, HttpResponse};
 use futures::future::{self, Either, Future};
+use futures03::future::{FutureExt, TryFutureExt};
+use futures03::compat::Future01CompatExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::db::{params, results::Paginated, DbError, DbErrorKind};
-use crate::error::ApiError;
+use crate::error::{ApiError, ApiErrorKind};
 use crate::web::extractors::{
     BsoPutRequest, BsoRequest, CollectionPostRequest, CollectionRequest, ConfigRequest,
     HeartbeatRequest, MetaRequest, ReplyFormat,
 };
 use crate::web::{X_LAST_MODIFIED, X_WEAVE_NEXT_OFFSET, X_WEAVE_RECORDS};
+use crate::server::ServerState;
 
 pub const ONE_KB: f64 = 1024.0;
 
@@ -384,44 +387,42 @@ pub fn get_configuration(creq: ConfigRequest) -> impl Future<Item = HttpResponse
  * * database - Database connection and status ("good" | "warn" | "fail")
  * * status - Overall system status ("good" | "fail")
  */
-pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error = Error> {
-    use crate::server::ServerState;
+pub async fn async_heartbeat(state: ServerState) -> Result<HttpResponse, Error> {
 
     let mut checklist = HashMap::new();
 
-    checklist.insert(
-        "version",
-        Value::String(env!("CARGO_PKG_VERSION").to_owned()),
-    );
-    checklist.insert("status", Value::String("good".to_owned()));
-    checklist.insert("state_data", Value::String("good".to_owned()));
+    checklist.insert("version", Value::from(env!("CARGO_PKG_VERSION")));
+    checklist.insert("status", Value::from("good"));
+    let db = state.db_pool.get().compat().await;
+    let result = db.unwrap().check(params::Check{}).compat().await;
+    match result {
+        Ok(true) => {
+            checklist.insert("database", Value::from("good"));
+        },
+        Ok(false) => {
+            checklist.insert("database", Value::from("warn"));
+            checklist.insert(
+                "database_msg",
+                Value::from("check failed without error"),
+            );
+        }
+        Err(e) => {
+            checklist.insert("database", Value::from("fail"));
+            checklist.insert("database_msg", Value::from(format!("Database unavailable: {:?}", e)));
+        }
+    };
+    Ok(HttpResponse::Ok().json(checklist))
+}
+
+pub fn heartbeat(hb: HeartbeatRequest) -> impl Future<Item = HttpResponse, Error = Error> {
+    // checklist.insert("state_data", Value::String("good".to_owned()));
     let state = match hb.req.app_data::<ServerState>() {
         Some(v) => v,
         None => {
             checklist.insert("status", Value::Bool(false));
-            checklist.insert("state_data", Value::String("fail".to_owned()));
-            return Either::A(future::result(Ok(HttpResponse::Ok().json(checklist))));
+            // checklist.insert("state_data", Value::String("fail".to_owned()));
+            return Ok(HttpResponse::Ok().json(checklist));
         }
     };
-    let fut = state.db_pool.get().map_err(Into::into).and_then(|db| {
-        match db.check() {
-            Ok(true) => {
-                checklist.insert("database", Value::String("good".to_owned()));
-            }
-            Ok(false) => {
-                checklist.insert("database", Value::String("warn".to_owned()));
-                checklist.insert(
-                    "database_msg",
-                    Value::String("check failed without error".to_owned()),
-                );
-            }
-            Err(e) => {
-                checklist.insert("status", Value::String("fail".to_owned()));
-                checklist.insert("database", Value::String("fail".to_owned()));
-                checklist.insert("database_msg", Value::String(format!("{:?}", e)));
-            }
-        };
-        future::ok(HttpResponse::Ok().json(checklist))
-    });
-    Either::B(fut)
+    async_heartbeat(state).boxed().compat()
 }

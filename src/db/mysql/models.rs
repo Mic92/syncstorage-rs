@@ -737,6 +737,13 @@ impl MysqlDb {
         self.map_collection_names(modifieds)
     }
 
+    fn check_sync(&self, _:params::Check) -> Result<results::Check> {
+        // has the database been up for more than 0 seconds?
+        let result = sql_query("SHOW STATUS LIKE \"Uptime\"").execute(&self.conn)?;
+        Ok(result as u64 > 0)
+    }
+
+
     fn map_collection_names<T>(&self, by_id: HashMap<i32, T>) -> Result<HashMap<String, T>> {
         let mut names = self.load_collection_names(by_id.keys())?;
         by_id
@@ -957,6 +964,7 @@ impl Db for MysqlDb {
         Option<results::GetBatch>
     );
     sync_db_method!(commit_batch, commit_batch_sync, CommitBatch);
+    sync_db_method!(check, check_sync, Check);
 
     fn validate_batch_id(&self, params: params::ValidateBatchId) -> Result<()> {
         self.validate_batch_id(params)
@@ -1005,12 +1013,6 @@ impl Db for MysqlDb {
     #[cfg(any(test, feature = "db_test"))]
     fn clear_coll_cache(&self) {
         self.coll_cache.clear();
-    }
-
-    fn check(&self) -> Result<bool> {
-        // has the database been up for more than 0 seconds?
-        let result = sql_query("SHOW STATUS LIKE \"Uptime\"").execute(&self.conn)?;
-        Ok(result as u64 > 0)
     }
 }
 
