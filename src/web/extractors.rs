@@ -947,7 +947,10 @@ impl HawkIdentifier {
         uri: &Uri,
     ) -> Result<Self, Error> {
         let payload = HawkPayload::extrude(header, method, secrets, connection_info, uri)?;
-        if payload.user_id != Self::uid_from_path(&uri)? {
+        /* "/storage/meta/global" returns or sets a timestamp and does not have a valid
+           user_id in the URI, so skip this check.
+        */
+        if uri.path() != "/storage/meta/global" && payload.user_id != Self::uid_from_path(&uri)? {
             Err(ValidationErrorKind::FromDetails(
                 "conflicts with payload".to_owned(),
                 RequestErrorLocation::Path,
